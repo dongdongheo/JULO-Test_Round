@@ -1,0 +1,65 @@
+worker_num = 2
+
+Vagrant.configure("2") do |config|
+  #Master Node
+  config.vm.define "master" do |master|
+    master.vm.box = "ubuntu/focal64"
+	master.vm.hostname = "Master"
+	master.vm.network "private_network", ip: "192.168.123.100"
+	master.vm.provider "virtualbox" do |vb|
+      vb.memory = 1024
+      vb.cpus = 1
+	  vb.name = "Master_Node"
+    end
+	master.vm.provision "shell", path: "master_config.sh"
+	master.vm.provision "file", source: "./nginx.yaml", destination: "/home/vagrant/nginx.yaml"
+  end
+  
+  #Load Balancer
+  config.vm.define "lb" do |lb|
+    lb.vm.box = "ubuntu/focal64"
+	lb.vm.hostname = "Lb"
+	lb.vm.network "private_network", ip: "192.168.123.101"
+	lb.vm.provider "virtualbox" do |vb|
+      vb.memory = 1024
+      vb.cpus = 1
+	  vb.name = "Lb_Node"
+    end
+	lb.vm.provision "file", source: "./lb_scripts/dynamic_conf.toml", destination: "/tmp/traefikconf/dynamic_conf.toml"
+    lb.vm.provision "file", source: "./lb_scripts/static_conf.toml", destination: "/tmp/traefikconf/static_conf.toml"
+	lb.vm.provision "shell", path: "lb_config.sh"
+  end
+  
+  #Worker Node
+  (1..worker_num).each do |i|
+    config.vm.define "worker#{i+1}" do |worker|
+      worker.vm.box = "ubuntu/focal64"
+	  worker.vm.hostname = "Worker#{i+1}"
+	  worker.vm.network "private_network", ip: "192.168.123.#{i+111}"
+	  worker.vm.provider "virtualbox" do |vb|
+        vb.memory = 1024
+        vb.cpus = 1
+	    vb.name = "Worker#{i+1}_Node"
+      end
+	  worker.vm.provision "shell", path: "worker_config.sh"
+    end
+  end
+  
+  #Final Deployed Worker Node
+  config.vm.define "worker1" do |worker1|
+    worker1.vm.box = "ubuntu/focal64"
+	worker1.vm.hostname = "Worker1"
+	worker1.vm.network "private_network", ip: "192.168.123.111"
+	worker1.vm.provider "virtualbox" do |vb|
+      vb.memory = 1024
+      vb.cpus = 1
+	  vb.name = "Worker1_Node"
+    end
+	worker1.vm.provision "shell", path: "worker_config.sh"
+	worker1.vm.provision "shell", inline: <<-SHELL
+	  sleep 60
+	  sshpass -p vagrant ssh -o StrictHostKeyChecking=no vagrant@192.168.123.100 "kubectl apply -f /home/vagrant/nginx.yaml"
+	SHELL
+  end
+  
+end
